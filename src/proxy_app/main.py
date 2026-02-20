@@ -110,7 +110,7 @@ with _console.status("[dim]Loading FastAPI framework...", spinner="dots"):
     from contextlib import asynccontextmanager
     from fastapi import FastAPI, Request, HTTPException, Depends
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import StreamingResponse, JSONResponse
+    from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
     from fastapi.security import APIKeyHeader
 
 print("  → Loading core dependencies...")
@@ -685,8 +685,6 @@ app.add_middleware(
 app.include_router(config_router)
 
 # Serve the config management UI as a static file
-from fastapi.responses import FileResponse
-
 _static_dir = Path(__file__).parent / "static"
 
 
