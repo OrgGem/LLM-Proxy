@@ -54,7 +54,12 @@ class TestBuildAuthHeaders:
         cfg = CustomBackendConfig(
             id="t",
             endpoint="https://x.com",
-            auth=AuthConfig(type="oauth2_client_credentials"),
+            auth=AuthConfig(
+                type="oauth2_client_credentials",
+                client_id="cid",
+                client_secret="csecret",
+                token_url="https://auth.example.com/token",
+            ),
         )
         headers = _build_auth_headers(cfg, token="fetched-token")
         assert headers == {"Authorization": "Bearer fetched-token"}

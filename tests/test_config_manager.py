@@ -165,3 +165,60 @@ class TestConfigManager:
         manager.reload()
         assert manager.get("external") is not None
         assert manager.get("original") is None
+
+
+class TestConfigValidation:
+    """Tests for input validation on CustomBackendConfig and AuthConfig."""
+
+    def test_invalid_config_id_special_chars(self):
+        with pytest.raises(Exception):
+            CustomBackendConfig(id="bad id!", endpoint="https://example.com")
+
+    def test_invalid_config_id_empty(self):
+        with pytest.raises(Exception):
+            CustomBackendConfig(id="", endpoint="https://example.com")
+
+    def test_valid_config_id_with_slashes(self):
+        cfg = CustomBackendConfig(id="org/my-backend", endpoint="https://example.com")
+        assert cfg.id == "org/my-backend"
+
+    def test_invalid_endpoint_no_scheme(self):
+        with pytest.raises(Exception):
+            CustomBackendConfig(id="test", endpoint="example.com/api")
+
+    def test_invalid_endpoint_ftp(self):
+        with pytest.raises(Exception):
+            CustomBackendConfig(id="test", endpoint="ftp://example.com/api")
+
+    def test_valid_endpoint_https(self):
+        cfg = CustomBackendConfig(id="test", endpoint="https://api.example.com/v1")
+        assert cfg.endpoint == "https://api.example.com/v1"
+
+    def test_valid_endpoint_http(self):
+        cfg = CustomBackendConfig(id="test", endpoint="http://localhost:8080/api")
+        assert cfg.endpoint == "http://localhost:8080/api"
+
+    def test_invalid_http_method(self):
+        with pytest.raises(Exception):
+            CustomBackendConfig(id="test", endpoint="https://example.com", method="TRACE")
+
+    def test_invalid_auth_type(self):
+        with pytest.raises(Exception):
+            AuthConfig(type="invalid_type")
+
+    def test_bearer_auth_requires_token(self):
+        with pytest.raises(Exception):
+            AuthConfig(type="bearer")
+
+    def test_oauth2_requires_fields(self):
+        with pytest.raises(Exception):
+            AuthConfig(type="oauth2_client_credentials")
+
+    def test_oauth2_valid(self):
+        auth = AuthConfig(
+            type="oauth2_client_credentials",
+            client_id="cid",
+            client_secret="csecret",
+            token_url="https://auth.example.com/token",
+        )
+        assert auth.client_id == "cid"

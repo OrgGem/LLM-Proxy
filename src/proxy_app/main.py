@@ -84,10 +84,14 @@ if _env_files_found:
     _env_names = [_ef.name for _ef in _env_files_found]
     print(f"📁 Loaded {len(_env_files_found)} .env file(s): {', '.join(_env_names)}")
 
-# Get proxy API key for display
+# Get proxy API key for display (masked for security)
 proxy_api_key = os.getenv("PROXY_API_KEY")
 if proxy_api_key:
-    key_display = f"✓ {proxy_api_key}"
+    # Show only first 4 and last 4 chars, mask the rest
+    if len(proxy_api_key) > 8:
+        key_display = f"✓ {proxy_api_key[:4]}{'*' * (len(proxy_api_key) - 8)}{proxy_api_key[-4:]}"
+    else:
+        key_display = f"✓ {'*' * len(proxy_api_key)}"
 else:
     key_display = "✗ Not Set (INSECURE - anyone can access!)"
 
@@ -304,21 +308,6 @@ class RotatorDebugFilter(logging.Filter):
 
 
 debug_file_handler.addFilter(RotatorDebugFilter())
-
-# Configure a console handler with color
-console_handler = colorlog.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
-formatter = colorlog.ColoredFormatter(
-    "%(log_color)s%(message)s",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "red,bg_white",
-    },
-)
-console_handler.setFormatter(formatter)
 
 
 # Add a filter to prevent any LiteLLM logs from cluttering the console
@@ -728,6 +717,9 @@ async def verify_anthropic_api_key(
     Dependency to verify API key for Anthropic endpoints.
     Accepts either x-api-key header (Anthropic style) or Authorization Bearer (OpenAI style).
     """
+    # If PROXY_API_KEY is not set or empty, skip verification (open access)
+    if not PROXY_API_KEY:
+        return x_api_key or auth
     # Check x-api-key first (Anthropic style)
     if x_api_key and x_api_key == PROXY_API_KEY:
         return x_api_key

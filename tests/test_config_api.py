@@ -3,9 +3,11 @@
 """Tests for the config API endpoints."""
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from fastapi import FastAPI
@@ -19,13 +21,16 @@ from proxy_app.config_api import router
 
 @pytest.fixture
 def app_client(tmp_path):
-    """Create a test FastAPI app with config router."""
-    app = FastAPI()
-    config_path = str(tmp_path / "test_configs.json")
-    manager = ConfigManager(config_path=config_path)
-    app.state.config_manager = manager
-    app.include_router(router)
-    return TestClient(app)
+    """Create a test FastAPI app with config router (no PROXY_API_KEY = open access)."""
+    with mock.patch.dict(os.environ, {}, clear=False):
+        # Ensure PROXY_API_KEY is not set for open-access tests
+        os.environ.pop("PROXY_API_KEY", None)
+        app = FastAPI()
+        config_path = str(tmp_path / "test_configs.json")
+        manager = ConfigManager(config_path=config_path)
+        app.state.config_manager = manager
+        app.include_router(router)
+        yield TestClient(app)
 
 
 class TestConfigAPI:
@@ -133,3 +138,62 @@ class TestConfigAPI:
         )
         assert resp.status_code == 201
         assert resp.json()["prompt_template"] == '{"prompt": "$prompt"}'
+
+
+class TestConfigAPIAuth:
+    """Tests for authentication on config management endpoints."""
+
+    @pytest.fixture
+    def secured_client(self, tmp_path):
+        """Create a test app with PROXY_API_KEY set."""
+        with mock.patch.dict(os.environ, {"PROXY_API_KEY": "test-key-12345"}):
+            app = FastAPI()
+            config_path = str(tmp_path / "test_configs.json")
+            manager = ConfigManager(config_path=config_path)
+            app.state.config_manager = manager
+            app.include_router(router)
+            yield TestClient(app)
+
+    def test_list_requires_auth(self, secured_client):
+        resp = secured_client.get("/configs")
+        assert resp.status_code == 401
+
+    def test_list_with_valid_auth(self, secured_client):
+        resp = secured_client.get(
+            "/configs",
+            headers={"Authorization": "Bearer test-key-12345"},
+        )
+        assert resp.status_code == 200
+
+    def test_create_requires_auth(self, secured_client):
+        resp = secured_client.post(
+            "/configs",
+            json={"id": "test", "endpoint": "https://example.com"},
+        )
+        assert resp.status_code == 401
+
+    def test_delete_requires_auth(self, secured_client):
+        resp = secured_client.delete("/configs/test")
+        assert resp.status_code == 401
+
+
+class TestConfigAPISensitiveMasking:
+    """Tests that GET /configs masks sensitive auth fields."""
+
+    def test_token_masked_in_list(self, app_client):
+        app_client.post(
+            "/configs",
+            json={
+                "id": "mask_test",
+                "endpoint": "https://api.example.com",
+                "auth": {
+                    "type": "bearer",
+                    "token": "super-secret-token-value",
+                },
+            },
+        )
+        resp = app_client.get("/configs")
+        config = resp.json()["configs"][0]
+        # Token should be masked — not equal to the original
+        assert config["auth"]["token"] != "super-secret-token-value"
+        assert "*" in config["auth"]["token"]

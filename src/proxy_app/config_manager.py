@@ -12,13 +12,14 @@ should route requests when the requested model matches the config ID.
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,33 @@ class AuthConfig(BaseModel):
     client_id: Optional[str] = Field(default=None, description="OAuth2 client ID")
     client_secret: Optional[str] = Field(default=None, description="OAuth2 client secret")
     token_url: Optional[str] = Field(default=None, description="OAuth2 token endpoint URL")
+
+    @model_validator(mode="after")
+    def _validate_auth(self) -> "AuthConfig":
+        valid_types = ("none", "bearer", "api_key", "oauth2_client_credentials")
+        if self.type not in valid_types:
+            raise ValueError(
+                f"Invalid auth type '{self.type}'. Must be one of: {', '.join(valid_types)}"
+            )
+        if self.type in ("bearer", "api_key") and not self.token:
+            raise ValueError(f"Auth type '{self.type}' requires a 'token' value")
+        if self.type == "oauth2_client_credentials":
+            missing = []
+            if not self.client_id:
+                missing.append("client_id")
+            if not self.client_secret:
+                missing.append("client_secret")
+            if not self.token_url:
+                missing.append("token_url")
+            if missing:
+                raise ValueError(
+                    f"Auth type 'oauth2_client_credentials' requires: {', '.join(missing)}"
+                )
+        return self
+
+
+# Regex: alphanumeric, hyphens, underscores, dots, slashes (for namespaced IDs)
+_VALID_CONFIG_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$")
 
 
 class CustomBackendConfig(BaseModel):
@@ -73,6 +101,27 @@ class CustomBackendConfig(BaseModel):
     description: Optional[str] = Field(default=None, description="Human-readable description")
     created_at: Optional[float] = Field(default=None, description="Creation timestamp")
     updated_at: Optional[float] = Field(default=None, description="Last update timestamp")
+
+    @model_validator(mode="after")
+    def _validate_config(self) -> "CustomBackendConfig":
+        # Validate config ID format
+        if not _VALID_CONFIG_ID.match(self.id):
+            raise ValueError(
+                f"Invalid config id '{self.id}'. Must be 1-128 characters, "
+                "start with alphanumeric, and contain only [a-zA-Z0-9._/-]"
+            )
+        # Validate endpoint URL scheme
+        if not self.endpoint.startswith(("https://", "http://")):
+            raise ValueError(
+                f"Invalid endpoint URL '{self.endpoint}'. Must start with http:// or https://"
+            )
+        # Validate HTTP method
+        valid_methods = ("GET", "POST", "PUT", "PATCH", "DELETE")
+        if self.method.upper() not in valid_methods:
+            raise ValueError(
+                f"Invalid HTTP method '{self.method}'. Must be one of: {', '.join(valid_methods)}"
+            )
+        return self
 
 
 # --- Config Manager ---
