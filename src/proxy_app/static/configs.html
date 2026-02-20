@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Backend Configs</title>
+    <style>
+        :root {
+            --bg: #1a1b26;
+            --surface: #24283b;
+            --border: #414868;
+            --text: #c0caf5;
+            --text-dim: #565f89;
+            --primary: #7aa2f7;
+            --success: #9ece6a;
+            --danger: #f7768e;
+            --warning: #e0af68;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 24px;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        h1 { margin-bottom: 24px; font-size: 1.5rem; }
+        .toolbar { display: flex; gap: 12px; margin-bottom: 20px; }
+        button {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        button:hover { border-color: var(--primary); }
+        button.primary { background: var(--primary); color: var(--bg); border-color: var(--primary); }
+        button.danger { background: var(--danger); color: var(--bg); border-color: var(--danger); }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .card-header h3 { font-size: 1rem; color: var(--primary); }
+        .card-actions { display: flex; gap: 8px; }
+        .card-detail { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 4px; }
+        .card-detail span { color: var(--text); }
+        .empty {
+            text-align: center;
+            color: var(--text-dim);
+            padding: 40px;
+        }
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            width: 560px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2 { margin-bottom: 16px; font-size: 1.2rem; }
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 0.875rem;
+        }
+        .form-group textarea { min-height: 80px; font-family: monospace; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+        .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            z-index: 200;
+            display: none;
+        }
+        .toast.success { background: var(--success); color: var(--bg); }
+        .toast.error { background: var(--danger); color: var(--bg); }
+        .toast.active { display: block; }
+    </style>
+</head>
+<body>
+    <h1>⚙️ Custom Backend Configurations</h1>
+    <div class="toolbar">
+        <button class="primary" onclick="openModal()">+ Add Config</button>
+        <button onclick="loadConfigs()">↻ Refresh</button>
+    </div>
+    <div id="config-list"></div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <h2 id="modal-title">Add Config</h2>
+            <form id="config-form" onsubmit="saveConfig(event)">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label>Config ID (used as model name)</label>
+                    <input type="text" id="cfg-id" required placeholder="my_backend">
+                </div>
+                <div class="form-group">
+                    <label>Endpoint URL</label>
+                    <input type="url" id="cfg-endpoint" required placeholder="https://api.example.com/v1/generate">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="cfg-description" placeholder="Optional description">
+                </div>
+                <div class="form-group">
+                    <label>HTTP Method</label>
+                    <select id="cfg-method">
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                        <option value="PUT">PUT</option>
+                    </select>
+                </div>
+
+                <h3 style="margin: 16px 0 8px; font-size: 0.95rem;">Authentication</h3>
+                <div class="form-group">
+                    <label>Auth Type</label>
+                    <select id="cfg-auth-type" onchange="toggleAuthFields()">
+                        <option value="none">None</option>
+                        <option value="bearer">Bearer Token</option>
+                        <option value="api_key">API Key</option>
+                        <option value="oauth2_client_credentials">OAuth2 Client Credentials</option>
+                    </select>
+                </div>
+                <div id="auth-token-fields" style="display:none;">
+                    <div class="form-group">
+                        <label>Token / API Key</label>
+                        <input type="text" id="cfg-auth-token" placeholder="sk-...">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Header Name</label>
+                            <input type="text" id="cfg-auth-header" value="Authorization">
+                        </div>
+                        <div class="form-group">
+                            <label>Header Prefix</label>
+                            <input type="text" id="cfg-auth-prefix" value="Bearer">
+                        </div>
+                    </div>
+                </div>
+                <div id="auth-oauth-fields" style="display:none;">
+                    <div class="form-group">
+                        <label>Client ID</label>
+                        <input type="text" id="cfg-auth-client-id">
+                    </div>
+                    <div class="form-group">
+                        <label>Client Secret</label>
+                        <input type="password" id="cfg-auth-client-secret">
+                    </div>
+                    <div class="form-group">
+                        <label>Token URL</label>
+                        <input type="url" id="cfg-auth-token-url" placeholder="https://auth.example.com/oauth/token">
+                    </div>
+                </div>
+
+                <h3 style="margin: 16px 0 8px; font-size: 0.95rem;">Prompt Template (optional)</h3>
+                <div class="form-group">
+                    <label>Template body (use $messages for JSON messages array, $prompt for concatenated text)</label>
+                    <textarea id="cfg-prompt-template" placeholder='{"prompt": "$prompt"}'></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="primary" id="save-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API = window.location.origin;
+
+        function toast(msg, type = 'success') {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'toast ' + type + ' active';
+            setTimeout(() => el.classList.remove('active'), 3000);
+        }
+
+        async function loadConfigs() {
+            try {
+                const resp = await fetch(API + '/configs');
+                const data = await resp.json();
+                renderConfigs(data.configs || []);
+            } catch (e) {
+                toast('Failed to load configs', 'error');
+            }
+        }
+
+        function renderConfigs(configs) {
+            const list = document.getElementById('config-list');
+            if (!configs.length) {
+                list.innerHTML = '<div class="empty">No custom backend configs yet. Click "+ Add Config" to create one.</div>';
+                return;
+            }
+            list.innerHTML = configs.map(c => `
+                <div class="card">
+                    <div class="card-header">
+                        <h3>${esc(c.id)}</h3>
+                        <div class="card-actions">
+                            <button onclick='editConfig(${JSON.stringify(JSON.stringify(c))})'>Edit</button>
+                            <button class="danger" onclick="deleteConfig('${esc(c.id)}')">Delete</button>
+                        </div>
+                    </div>
+                    <div class="card-detail">Endpoint: <span>${esc(c.endpoint)}</span></div>
+                    <div class="card-detail">Method: <span>${esc(c.method || 'POST')}</span></div>
+                    <div class="card-detail">Auth: <span>${esc(c.auth?.type || 'none')}</span></div>
+                    ${c.description ? `<div class="card-detail">Description: <span>${esc(c.description)}</span></div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function openModal(config) {
+            document.getElementById('modal-title').textContent = config ? 'Edit Config' : 'Add Config';
+            document.getElementById('edit-id').value = config ? config.id : '';
+            document.getElementById('cfg-id').value = config ? config.id : '';
+            document.getElementById('cfg-id').disabled = !!config;
+            document.getElementById('cfg-endpoint').value = config ? config.endpoint : '';
+            document.getElementById('cfg-description').value = config?.description || '';
+            document.getElementById('cfg-method').value = config?.method || 'POST';
+            document.getElementById('cfg-auth-type').value = config?.auth?.type || 'none';
+            document.getElementById('cfg-auth-token').value = config?.auth?.token || '';
+            document.getElementById('cfg-auth-header').value = config?.auth?.header_name || 'Authorization';
+            document.getElementById('cfg-auth-prefix').value = config?.auth?.header_prefix || 'Bearer';
+            document.getElementById('cfg-auth-client-id').value = config?.auth?.client_id || '';
+            document.getElementById('cfg-auth-client-secret').value = config?.auth?.client_secret || '';
+            document.getElementById('cfg-auth-token-url').value = config?.auth?.token_url || '';
+            document.getElementById('cfg-prompt-template').value = config?.prompt_template || '';
+            toggleAuthFields();
+            document.getElementById('modal-overlay').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('active');
+            document.getElementById('config-form').reset();
+            document.getElementById('cfg-id').disabled = false;
+        }
+
+        function toggleAuthFields() {
+            const type = document.getElementById('cfg-auth-type').value;
+            document.getElementById('auth-token-fields').style.display =
+                (type === 'bearer' || type === 'api_key') ? '' : 'none';
+            document.getElementById('auth-oauth-fields').style.display =
+                type === 'oauth2_client_credentials' ? '' : 'none';
+        }
+
+        function editConfig(jsonStr) {
+            openModal(JSON.parse(jsonStr));
+        }
+
+        async function saveConfig(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-id').value;
+            const cfg = {
+                id: document.getElementById('cfg-id').value.trim(),
+                endpoint: document.getElementById('cfg-endpoint').value.trim(),
+                description: document.getElementById('cfg-description').value.trim() || null,
+                method: document.getElementById('cfg-method').value,
+                auth: {
+                    type: document.getElementById('cfg-auth-type').value,
+                    token: document.getElementById('cfg-auth-token').value.trim() || null,
+                    header_name: document.getElementById('cfg-auth-header').value.trim() || 'Authorization',
+                    header_prefix: document.getElementById('cfg-auth-prefix').value.trim() || 'Bearer',
+                    client_id: document.getElementById('cfg-auth-client-id').value.trim() || null,
+                    client_secret: document.getElementById('cfg-auth-client-secret').value.trim() || null,
+                    token_url: document.getElementById('cfg-auth-token-url').value.trim() || null,
+                },
+                prompt_template: document.getElementById('cfg-prompt-template').value.trim() || null,
+            };
+
+            try {
+                let resp;
+                if (editId) {
+                    resp = await fetch(API + '/configs/' + encodeURIComponent(editId), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cfg),
+                    });
+                } else {
+                    resp = await fetch(API + '/configs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cfg),
+                    });
+                }
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || 'Request failed');
+                }
+                toast(editId ? 'Config updated' : 'Config created');
+                closeModal();
+                loadConfigs();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function deleteConfig(id) {
+            if (!confirm('Delete config "' + id + '"?')) return;
+            try {
+                const resp = await fetch(API + '/configs/' + encodeURIComponent(id), { method: 'DELETE' });
+                if (!resp.ok && resp.status !== 204) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || 'Delete failed');
+                }
+                toast('Config deleted');
+                loadConfigs();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        // Initial load
+        loadConfigs();
+    </script>
+</body>
+</html>
