@@ -22,9 +22,8 @@ from proxy_app.config_api import router
 @pytest.fixture
 def app_client(tmp_path):
     """Create a test FastAPI app with config router (no PROXY_API_KEY = open access)."""
-    with mock.patch.dict(os.environ, {}, clear=False):
-        # Ensure PROXY_API_KEY is not set for open-access tests
-        os.environ.pop("PROXY_API_KEY", None)
+    env_overrides = {k: v for k, v in os.environ.items() if k != "PROXY_API_KEY"}
+    with mock.patch.dict(os.environ, env_overrides, clear=True):
         app = FastAPI()
         config_path = str(tmp_path / "test_configs.json")
         manager = ConfigManager(config_path=config_path)
@@ -194,6 +193,10 @@ class TestConfigAPISensitiveMasking:
         )
         resp = app_client.get("/configs")
         config = resp.json()["configs"][0]
+        token = config["auth"]["token"]
         # Token should be masked — not equal to the original
-        assert config["auth"]["token"] != "super-secret-token-value"
-        assert "*" in config["auth"]["token"]
+        assert token != "super-secret-token-value"
+        assert "*" in token
+        # Verify masking format: first 4 + asterisks + last 4
+        assert token.startswith("supe")
+        assert token.endswith("alue")

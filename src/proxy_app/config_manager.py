@@ -70,6 +70,7 @@ class AuthConfig(BaseModel):
 
 
 # Regex: alphanumeric, hyphens, underscores, dots, slashes (for namespaced IDs)
+# Allows 1-128 characters total: first char alphanumeric, remaining 0-127 chars from allowed set
 _VALID_CONFIG_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$")
 
 

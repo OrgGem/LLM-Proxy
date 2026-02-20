@@ -61,7 +61,7 @@ def _mask_sensitive(data: Dict[str, Any]) -> Dict[str, Any]:
         auth = dict(auth)
         for field in _SENSITIVE_FIELDS:
             val = auth.get(field)
-            if val and isinstance(val, str) and len(val) > 0:
+            if val and isinstance(val, str):
                 if len(val) > 8:
                     auth[field] = f"{val[:4]}{'*' * (len(val) - 8)}{val[-4:]}"
                 else:
