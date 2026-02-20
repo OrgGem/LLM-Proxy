@@ -138,6 +138,9 @@ with _console.status("[dim]Initializing proxy core...", spinner="dots"):
     from proxy_app.request_logger import log_request_to_console
     from proxy_app.batch_manager import EmbeddingBatcher
     from proxy_app.detailed_logger import RawIOLogger
+    from proxy_app.config_manager import ConfigManager
+    from proxy_app.config_api import router as config_router
+    from proxy_app.custom_backend_handler import handle_custom_backend
 
 print("  → Discovering provider plugins...")
 # Provider lazy loading happens during import, so time it here
@@ -640,6 +643,15 @@ async def lifespan(app: FastAPI):
     app.state.model_info_service = model_info_service
     logging.info("Model info service started (fetching pricing data in background).")
 
+    # Initialize custom backend config manager
+    config_manager = ConfigManager()
+    app.state.config_manager = config_manager
+    custom_count = len(config_manager.get_all())
+    if custom_count:
+        logging.info(
+            f"Custom backend config manager loaded ({custom_count} config(s))."
+        )
+
     yield
 
     await client.background_refresher.stop()  # Stop the background task on shutdown
@@ -668,6 +680,21 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# Include custom backend config management API router
+app.include_router(config_router)
+
+# Serve the config management UI as a static file
+from fastapi.responses import FileResponse
+
+_static_dir = Path(__file__).parent / "static"
+
+
+@app.get("/ui/configs")
+async def config_ui():
+    """Serve the config management UI."""
+    return FileResponse(_static_dir / "configs.html")
+
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
@@ -953,6 +980,26 @@ async def chat_completions(
             client_info=(request.client.host, request.client.port),
             request_data=request_data,
         )
+
+        # --- Custom backend routing ---
+        # If model matches a custom config ID, route to the custom REST API backend
+        config_manager: ConfigManager = request.app.state.config_manager
+        custom_config = config_manager.get(model) if model else None
+        if custom_config:
+            try:
+                result = await handle_custom_backend(custom_config, request_data)
+                if raw_logger:
+                    raw_logger.log_final_response(
+                        status_code=200, headers=None, body=result
+                    )
+                return JSONResponse(content=result)
+            except Exception as exc:
+                logging.error(f"Custom backend '{model}' failed: {exc}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Custom backend error: {str(exc)}",
+                )
+
         is_streaming = request_data.get("stream", False)
 
         if is_streaming:
@@ -1281,11 +1328,27 @@ async def list_models(
     """
     model_ids = await client.get_all_available_models(grouped=False)
 
+    # Include custom backend config IDs as available models
+    config_manager: ConfigManager = request.app.state.config_manager
+    custom_configs = config_manager.get_all()
+    custom_ids = [c.id for c in custom_configs if c.id not in model_ids]
+    all_model_ids = list(model_ids) + custom_ids
+
     if enriched and hasattr(request.app.state, "model_info_service"):
         model_info_service = request.app.state.model_info_service
         if model_info_service.is_ready:
             # Return enriched model data
             enriched_data = model_info_service.enrich_model_list(model_ids)
+            # Add custom configs as basic cards
+            for cid in custom_ids:
+                enriched_data.append(
+                    {
+                        "id": cid,
+                        "object": "model",
+                        "created": int(time.time()),
+                        "owned_by": "custom-backend",
+                    }
+                )
             return {"object": "list", "data": enriched_data}
 
     # Fallback to basic model cards
@@ -1294,9 +1357,9 @@ async def list_models(
             "id": model_id,
             "object": "model",
             "created": int(time.time()),
-            "owned_by": "Mirro-Proxy",
+            "owned_by": "custom-backend" if model_id in custom_ids else "Mirro-Proxy",
         }
-        for model_id in model_ids
+        for model_id in all_model_ids
     ]
     return {"object": "list", "data": model_cards}
 
